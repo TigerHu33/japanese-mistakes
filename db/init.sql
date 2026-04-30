@@ -15,12 +15,14 @@ CREATE TABLE IF NOT EXISTS mistakes (
   explanation     TEXT,
   error_count     INTEGER NOT NULL DEFAULT 1,
   last_wrong_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_practiced_at TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_mistakes_category ON mistakes(category);
 CREATE INDEX IF NOT EXISTS idx_mistakes_sub_category ON mistakes(sub_category);
 CREATE INDEX IF NOT EXISTS idx_mistakes_error_count ON mistakes(error_count DESC);
+CREATE INDEX IF NOT EXISTS idx_mistakes_last_practiced ON mistakes(last_practiced_at NULLS FIRST);
 
 -- PostgREST 需要一个 RPC 方便地原子性地 +1 错误次数
 CREATE OR REPLACE FUNCTION increment_error(mistake_id INTEGER)

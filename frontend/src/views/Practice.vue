@@ -1,52 +1,98 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CATEGORIES, SUB_CATEGORIES, listMistakes, incrementError } from '../api'
+import {
+  CATEGORIES,
+  SUB_CATEGORIES,
+  DEFAULT_COUNTS,
+  DEFAULT_COUNT_FALLBACK,
+  getPracticePool,
+  incrementError,
+  markPracticed
+} from '../api'
+
+// stage: 'setup' | 'practicing' | 'finished'
+const stage = ref('setup')
+const loading = ref(false)
 
 const category = ref('文字・語彙')
 const subCategory = ref('')
 const subOptions = computed(() => SUB_CATEGORIES[category.value] || [])
-
 watch(category, () => { subCategory.value = '' })
 
-const pool = ref([])
+const plannedCount = computed(() =>
+  subCategory.value
+    ? DEFAULT_COUNTS[subCategory.value] || DEFAULT_COUNT_FALLBACK
+    : DEFAULT_COUNT_FALLBACK
+)
+
+// セッション内ステート
+const queue = ref([])              // これから解く問題
+const totalAsked = ref(0)          // 出題数（最初に決まる）
+const wrongList = ref([])          // 間違えた問題（再演習用）
+const correctList = ref([])        // 正解した問題
+
 const current = ref(null)
 const selected = ref(null)
 const submitted = ref(false)
 const isCorrect = ref(false)
-const stats = ref({ done: 0, correct: 0 })
-const loading = ref(false)
 
-const start = async () => {
+const reviewMode = ref(false)      // 「間違いを見直す」中
+
+const shuffle = (arr) => {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+const startSession = async () => {
   loading.value = true
   try {
-    pool.value = await listMistakes({
+    const pool = await getPracticePool({
       category: category.value,
-      sub_category: subCategory.value || undefined
+      sub_category: subCategory.value || undefined,
+      limit: plannedCount.value
     })
-    if (pool.value.length === 0) {
-      ElMessage.warning('この題型の錯題がありません')
-      current.value = null
+    if (pool.length === 0) {
+      ElMessage.warning('該当する錯題がありません')
       return
     }
-    stats.value = { done: 0, correct: 0 }
+    queue.value = shuffle(pool)
+    totalAsked.value = queue.value.length
+    wrongList.value = []
+    correctList.value = []
+    reviewMode.value = false
+    stage.value = 'practicing'
     nextQuestion()
   } finally {
     loading.value = false
   }
 }
 
+const startReviewWrong = () => {
+  if (wrongList.value.length === 0) return
+  queue.value = shuffle(wrongList.value)
+  totalAsked.value = queue.value.length
+  wrongList.value = []
+  correctList.value = []
+  reviewMode.value = true
+  stage.value = 'practicing'
+  nextQuestion()
+}
+
 const nextQuestion = () => {
   selected.value = null
   submitted.value = false
   isCorrect.value = false
-  if (pool.value.length === 0) {
+  if (queue.value.length === 0) {
+    stage.value = 'finished'
     current.value = null
-    ElMessage.success('全問完了しました')
     return
   }
-  const idx = Math.floor(Math.random() * pool.value.length)
-  current.value = pool.value.splice(idx, 1)[0]
+  current.value = queue.value.shift()
 }
 
 const submit = async () => {
@@ -56,12 +102,19 @@ const submit = async () => {
   }
   submitted.value = true
   isCorrect.value = selected.value === current.value.correct_option
-  stats.value.done += 1
   if (isCorrect.value) {
-    stats.value.correct += 1
+    correctList.value.push(current.value)
   } else {
+    wrongList.value.push(current.value)
     await incrementError(current.value.id)
   }
+  await markPracticed(current.value.id)
+}
+
+const finishSession = () => {
+  stage.value = 'setup'
+  current.value = null
+  queue.value = []
 }
 
 const options = computed(() => {
@@ -85,13 +138,16 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 }
+
+const progressDone = computed(() => totalAsked.value - queue.value.length - (current.value ? 1 : 0))
 </script>
 
 <template>
   <el-card v-loading="loading">
     <template #header>練習モード</template>
 
-    <div v-if="!current" class="setup">
+    <!-- セットアップ -->
+    <div v-if="stage === 'setup'" class="setup">
       <el-form inline>
         <el-form-item label="題型">
           <el-select v-model="category" style="width: 180px">
@@ -103,23 +159,23 @@ function escapeHtml(s) {
             v-model="subCategory"
             placeholder="（指定なし）"
             clearable
-            style="width: 220px"
+            style="width: 260px"
           >
             <el-option v-for="s in subOptions" :key="s" :label="s" :value="s" />
           </el-select>
         </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="start">開始</el-button>
-        </el-form-item>
       </el-form>
-      <div v-if="stats.done > 0" class="summary">
-        前回：{{ stats.done }} 問中 {{ stats.correct }} 問正解
-      </div>
+      <div class="plan">出題予定: <strong>{{ plannedCount }}</strong> 問（未演習・古い順を優先）</div>
+      <el-button type="primary" @click="startSession">開始</el-button>
     </div>
 
-    <div v-else class="quiz">
+    <!-- 練習中 -->
+    <div v-else-if="stage === 'practicing' && current" class="quiz">
       <div class="meta">
-        残り {{ pool.length }} 問 / 正解 {{ stats.correct }}・回答 {{ stats.done }}
+        <span v-if="reviewMode" class="review-badge">見直し中</span>
+        進捗 {{ progressDone + 1 }} / {{ totalAsked }}
+        ・正解 {{ correctList.length }}
+        ・不正解 {{ wrongList.length }}
       </div>
       <h3 class="question" v-html="renderQuestion(current)"></h3>
       <el-radio-group v-model="selected" :disabled="submitted" class="options">
@@ -152,13 +208,50 @@ function escapeHtml(s) {
         <el-button v-else type="primary" @click="nextQuestion">次の問題</el-button>
       </div>
     </div>
+
+    <!-- 結果画面 -->
+    <div v-else-if="stage === 'finished'" class="result">
+      <h3>{{ reviewMode ? '見直し終了' : 'セッション終了' }}</h3>
+      <div class="score">
+        <span class="score-num">{{ correctList.length }}</span>
+        / {{ totalAsked }} 問正解
+      </div>
+      <div class="rate">正答率 {{ Math.round((correctList.length / totalAsked) * 100) }}%</div>
+
+      <div v-if="wrongList.length > 0" class="wrong-list">
+        <h4>間違えた問題（{{ wrongList.length }}件）</h4>
+        <ul>
+          <li v-for="m in wrongList" :key="m.id">
+            <span v-html="renderQuestion(m)"></span>
+            <span class="ans">→ {{ m.correct_option }}. {{ m[`option${m.correct_option}`] }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="actions">
+        <el-button @click="finishSession">完了</el-button>
+        <el-button type="primary" @click="startSession">もう一組</el-button>
+        <el-button
+          type="warning"
+          :disabled="wrongList.length === 0"
+          @click="startReviewWrong"
+        >間違いを見直す（{{ wrongList.length }}）</el-button>
+      </div>
+    </div>
   </el-card>
 </template>
 
 <style scoped>
-.setup, .quiz { padding: 8px 0; }
-.summary { margin-top: 12px; color: #909399; }
-.meta { color: #909399; margin-bottom: 12px; }
+.setup, .quiz, .result { padding: 8px 0; }
+.plan { margin: 12px 0; color: #606266; }
+.meta { color: #909399; margin-bottom: 12px; display: flex; gap: 12px; align-items: center; }
+.review-badge {
+  background: #faecd8;
+  color: #e6a23c;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+}
 .question { white-space: pre-wrap; line-height: 1.6; }
 .options { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; align-items: stretch; }
 .options :deep(.el-radio) {
@@ -178,13 +271,22 @@ function escapeHtml(s) {
 }
 .options :deep(.el-radio.correct) { background: #f0f9eb; }
 .options :deep(.el-radio.wrong) { background: #fef0f0; }
+.feedback { margin: 16px 0; }
+.explanation { margin-top: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px; }
+.actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
 .question :deep(.underline-word) {
   text-decoration: underline;
   text-decoration-thickness: 2px;
   text-underline-offset: 4px;
   font-weight: 600;
 }
-.feedback { margin: 16px 0; }
-.explanation { margin-top: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px; }
-.actions { margin-top: 16px; }
+
+.result h3 { margin: 0 0 16px 0; }
+.score { font-size: 18px; }
+.score-num { font-size: 32px; font-weight: 600; color: #409eff; }
+.rate { color: #909399; margin-top: 4px; }
+.wrong-list { margin-top: 24px; }
+.wrong-list h4 { color: #f56c6c; }
+.wrong-list ul { padding-left: 20px; line-height: 1.8; }
+.wrong-list .ans { color: #67c23a; margin-left: 8px; }
 </style>

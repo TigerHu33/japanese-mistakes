@@ -24,6 +24,24 @@ export const SUB_CATEGORIES = {
   ]
 }
 
+// 1 セッションあたりのデフォルト出題数
+export const DEFAULT_COUNTS = {
+  '漢字読み': 20,
+  '文脈規定': 20,
+  '言い換え類義': 20,
+  '用法': 20,
+  '文の文法1（文法形式の判断）': 20,
+  '文の文法2（文の組み立て）': 10,
+  '文章の文法': 5,
+  '内容理解（短文）': 4,
+  '内容理解（中文）': 3,
+  '内容理解（長文）': 2,
+  '統合理解': 2,
+  '主張理解（長文）': 2,
+  '情報検索': 4
+}
+export const DEFAULT_COUNT_FALLBACK = 20
+
 export async function listMistakes({ category, sub_category } = {}) {
   const params = { order: 'error_count.desc,last_wrong_at.desc' }
   if (category) params.category = `eq.${category}`
@@ -54,4 +72,21 @@ export async function updateMistake(id, payload) {
 export async function incrementError(id) {
   const { data } = await http.post('/rpc/increment_error', { mistake_id: id })
   return data
+}
+
+// 練習プール取得：last_practiced_at が NULL or 古い順を優先
+export async function getPracticePool({ category, sub_category, limit }) {
+  const params = {
+    category: `eq.${category}`,
+    order: 'last_practiced_at.asc.nullsfirst,error_count.desc'
+  }
+  if (sub_category) params.sub_category = `eq.${sub_category}`
+  if (limit) params.limit = limit
+  const { data } = await http.get('/mistakes', { params })
+  return data
+}
+
+// 解答済み（正解／不正解問わず）として last_practiced_at を更新
+export async function markPracticed(id) {
+  await http.patch(`/mistakes?id=eq.${id}`, { last_practiced_at: new Date().toISOString() })
 }
