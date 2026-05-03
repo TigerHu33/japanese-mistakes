@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS mistakes (
   correct_option  SMALLINT NOT NULL CHECK (correct_option BETWEEN 1 AND 4),
   underline_text  TEXT,
   explanation     TEXT,
+  source_book     TEXT,                  -- 教材名（例: "JLPT N1 この一冊で合格"）
+  source_page     TEXT,                  -- ページ（例: "78"）
   error_count     INTEGER NOT NULL DEFAULT 1,
   last_wrong_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_practiced_at TIMESTAMPTZ,

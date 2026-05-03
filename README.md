@@ -1,6 +1,6 @@
 # N1 錯題記録 (japanese-mistakes)
 
-JLPT N1 備考用の錯題管理アプリ。Docker Compose 一発で起動。
+JLPT N1 備考用の錯題管理アプリ。db / api は Docker、フロントは宿主で起動（macOS bind mount + Vite 監視の不安定問題を回避）。
 
 ---
 
@@ -52,8 +52,11 @@ JLPT 公式ガイドブック（p.20「N1 大問のねらい」）に準拠。
 │  Vue 3 SPA │ ─────────▶ │  PostgREST   │ ───────▶ │  PostgreSQL  │
 │  (Vite)    │            │  (zero-code) │          │      16      │
 └────────────┘            └──────────────┘          └──────────────┘
-   :5173                       :3000                     :5432
+   :5173                       :3000                     :55432
+   ↑ ホストで実行             ↑ Docker                  ↑ Docker
 ```
+
+Vite を Docker bind mount で動かすと macOS では監視イベントが落ちて固まることが多発。db / api は監視不要なので Docker のまま、Vite は宿主に出した。
 
 | 層 | 採用 | 理由 |
 |----|------|------|
@@ -97,33 +100,42 @@ CREATE TABLE mistakes (
 
 ## 4. 起動方法
 
-### 初回起動
+### ワンショット起動
 
 ```bash
 cd /Users/kozen/work/project/japanese-mistakes
-docker compose up -d
+./start.sh
 ```
 
-| サービス | URL | 用途 |
-|---------|-----|------|
-| Web   | http://localhost:5173 | アプリ画面 |
-| API   | http://localhost:3000 | PostgREST（直叩き可） |
-| DB    | localhost:55432       | psql 等で直接接続可（user: app / pass: app_pass / db: jp_mistakes）。ホスト側 5432 競合回避のため 55432 にマップ |
+`start.sh` は Docker (db + api) を起動し、続けて宿主で Vite を立ち上げる。Ctrl+C で Vite が止まる（Docker は動いたまま）。
 
-初回は `npm install` が走るため Web 立ち上がりに 1〜2 分かかる。ログ確認:
+### 個別操作
 
 ```bash
-docker compose logs -f web
+./start.sh           # 冪等起動 (健全なサービスはそのまま)
+./stop.sh            # Vite だけ停止 (db/api は常駐)
+./restart.sh         # 個別修復 (壊れているものだけ直す)
+
+# 後端を完全停止したい場合
+docker compose stop              # 停止（データ保持）
+docker compose down              # 削除（ボリューム保持）
+docker compose down -v           # ボリュームごと削除（DB 全消し）
 ```
 
-### 停止 / 再起動
+通常は db / api を Docker で常駐させ、Vite だけを `start.sh` / `stop.sh` で出し入れする運用が軽い。
 
-```bash
-docker compose stop          # 停止（データは残る）
-docker compose start         # 再開
-docker compose down          # コンテナ削除（DB ボリューム残る）
-docker compose down -v       # ボリュームごと削除（DB 全消し）
-```
+| サービス | URL | 場所 | 用途 |
+|---------|-----|------|------|
+| Web   | http://localhost:5173 | 宿主 | アプリ画面 |
+| API   | http://localhost:3000 | Docker | PostgREST（直叩き可） |
+| DB    | localhost:55432       | Docker | psql 等（user: app / pass: app_pass / db: jp_mistakes）。5432 競合回避のため 55432 にマップ |
+
+### よくある不具合
+
+- **Docker daemon が応答しない / `docker compose` が固まる** → `./restart.sh` を実行。Vite + 滞留 CLI を kill → Docker Desktop 再起動 → db + api 起動 → start.sh に exec して前端まで一気に立て直す。
+- **port 競合エラー** → `./start.sh` の事前チェックで該当 PID を表示する。前回の Vite / docker container が残っている場合があるので kill するか `docker compose down`。
+- **Vite 起動時に `Cannot find module` 系エラー** → 宿主 `frontend/node_modules` がコンテナ環境（linux-arm64）時代の遺物を含んでいる。`rm -rf frontend/node_modules && npm install` で解消。
+- **CLI と Docker Desktop のバージョン不一致 (500 Internal Server Error)** → `brew upgrade docker` で揃える。
 
 ---
 
@@ -146,11 +158,16 @@ docker compose down -v       # ボリュームごと削除（DB 全消し）
 japanese-mistakes/
 ├── docker-compose.yml
 ├── README.md
+├── start.sh                    # 冪等起動 (db+api を Docker で / Vite を宿主で)
+├── stop.sh                     # Vite のみ停止 (db/api は残す)
+├── restart.sh                  # 個別修復 (壊れているものだけ直す)
+├── scripts/
+│   └── lib.sh                  # 共通ヘルスチェック関数
 ├── db/
 │   └── init.sql                # スキーマ・関数・権限
 └── frontend/
     ├── package.json
-    ├── vite.config.js          # /api → http://api:3000 にプロキシ
+    ├── vite.config.js          # /api → http://localhost:3000 にプロキシ
     ├── index.html
     └── src/
         ├── main.js             # ルーター設定
@@ -164,7 +181,84 @@ japanese-mistakes/
 
 ---
 
-## 7. 既知の制約・拡張余地
+## 7. 題型別データ入力規約
+
+題型ごとに `question` / `option1-4` / `underline_text` の埋め方が異なる。AI / スクリプトで一括登録する場合は下記に従う。
+
+### 文脈規定 / 言い換え類義 / 漢字読み
+
+- `question`: 出題文の全体（句点まで）
+- `underline_text`: 出題文中で下線を引く語句（１個）
+- `option1-4`: 短い選択肢（語・短句）
+- `correct_option`: 1〜4
+
+例（言い換え類義）:
+```json
+{
+  "category": "文字・語彙", "sub_category": "言い換え類義",
+  "question": "メディアはいつも人々の不安をあおるニュースを流す。",
+  "underline_text": "あおる",
+  "option1": "否定する", "option2": "刺激する",
+  "option3": "同感する", "option4": "主張する",
+  "correct_option": 2
+}
+```
+
+### 用法
+
+- `question`: 出題対象の単語そのもの（例: `由来`）
+- `underline_text`: **空（null）**
+- `option1-4`: それぞれが完整な例文（その単語を含む）
+- `correct_option`: 1〜4
+- フロントの `Practice.vue` は `sub_category === '用法'` のとき、選択肢中の `question` 文字列を自動的に下線表示する
+
+例:
+```json
+{
+  "category": "文字・語彙", "sub_category": "用法",
+  "question": "由来",
+  "option1": "「サボる」という言葉は、フランス語に由来している。",
+  "option2": "人類の由来は、三十万年前にまでさかのぼる。",
+  "option3": "日本では、年の初めに見る夢に富士山が出てくると由来が良いとされている。",
+  "option4": "この人物が今回の事件に由来している可能性は低そうだ。",
+  "correct_option": 1
+}
+```
+
+### `explanation`（任意・全題型共通）
+
+複数行を改行 `\n` で書く。フロント側で `white-space: pre-wrap` 描画される。推奨フォーマット:
+
+```
+【意味】<単語>：<辞書的意味>
+1. ✓ <正解選択肢の解説>
+2. ✗ <誤答>: 正しくは「<置換語>」
+3. ✗ ...
+4. ✗ ...
+```
+
+### 登録方法（curl で一括）
+
+PostgREST に直接 POST。配列で一括投入可能。
+
+```bash
+curl -X POST 'http://localhost:3000/mistakes' \
+  -H 'Content-Type: application/json' \
+  -H 'Prefer: return=representation' \
+  --data-binary @batch.json
+```
+
+`explanation` を後付けする場合は PATCH:
+
+```bash
+curl -X PATCH 'http://localhost:3000/mistakes?id=eq.142' \
+  -H 'Content-Type: application/json' \
+  -d '{"explanation": "..."}'
+```
+
+---
+
+## 8. 既知の制約・拡張余地
 
 - 認証なし。ローカル個人利用前提
 - 聴解未対応（音声アップロード機能なし）

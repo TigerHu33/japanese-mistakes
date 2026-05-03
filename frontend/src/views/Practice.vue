@@ -16,9 +16,9 @@ const stage = ref('setup')
 const loading = ref(false)
 
 const category = ref('文字・語彙')
-const subCategory = ref('')
 const subOptions = computed(() => SUB_CATEGORIES[category.value] || [])
-watch(category, () => { subCategory.value = '' })
+const subCategory = ref(subOptions.value[0] || '')
+watch(category, () => { subCategory.value = subOptions.value[0] || '' })
 
 const plannedCount = computed(() =>
   subCategory.value
@@ -130,6 +130,16 @@ const renderQuestion = (m) => {
   return safeQ.replace(new RegExp(escaped), `<u class="underline-word">${safeWord}</u>`)
 }
 
+const renderOption = (text, m) => {
+  const safe = escapeHtml(text)
+  if (m.sub_category === '用法' && m.question) {
+    const safeWord = escapeHtml(m.question)
+    const escaped = safeWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return safe.replace(new RegExp(escaped, 'g'), `<u class="underline-word">${safeWord}</u>`)
+  }
+  return safe
+}
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -172,6 +182,7 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
     <!-- 練習中 -->
     <div v-else-if="stage === 'practicing' && current" class="quiz">
       <div class="meta">
+        <el-button size="small" plain @click="finishSession">← 戻る</el-button>
         <span v-if="reviewMode" class="review-badge">見直し中</span>
         進捗 {{ progressDone + 1 }} / {{ totalAsked }}
         ・正解 {{ correctList.length }}
@@ -188,7 +199,7 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
             'wrong': submitted && opt.n === selected && selected !== current.correct_option
           }"
         >
-          {{ opt.n }}. {{ opt.text }}
+          <span v-html="`${opt.n}. ` + renderOption(opt.text, current)"></span>
         </el-radio>
       </el-radio-group>
 
@@ -272,9 +283,10 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
 .options :deep(.el-radio.correct) { background: #f0f9eb; }
 .options :deep(.el-radio.wrong) { background: #fef0f0; }
 .feedback { margin: 16px 0; }
-.explanation { margin-top: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px; }
+.explanation { margin-top: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px; white-space: pre-wrap; line-height: 1.6; }
 .actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
-.question :deep(.underline-word) {
+.question :deep(.underline-word),
+.options :deep(.underline-word) {
   text-decoration: underline;
   text-decoration-thickness: 2px;
   text-underline-offset: 4px;

@@ -8,6 +8,9 @@ const filterSub = ref('')
 const items = ref([])
 const loading = ref(false)
 const expanded = ref([])
+const expandedSubs = ref([])
+
+const subKey = (category, sub) => `${category}::${sub}`
 
 const subOptions = computed(() =>
   filterCategory.value ? SUB_CATEGORIES[filterCategory.value] || [] : []
@@ -44,6 +47,7 @@ const load = async () => {
       sub_category: filterSub.value || undefined
     })
     expanded.value = grouped.value.map((g) => g.category)
+    expandedSubs.value = []
   } finally {
     loading.value = false
   }
@@ -58,6 +62,14 @@ const remove = async (row) => {
 
 const correctText = (row) =>
   `${row.correct_option}. ${row[`option${row.correct_option}`]}`
+
+const sortByPage = (a, b) => {
+  const toNum = (v) => {
+    const n = parseInt(String(v ?? '').match(/\d+/)?.[0], 10)
+    return Number.isNaN(n) ? -Infinity : n
+  }
+  return toNum(a.source_page) - toNum(b.source_page)
+}
 
 watch(filterCategory, () => {
   filterSub.value = ''
@@ -109,24 +121,38 @@ onMounted(load)
           </span>
         </template>
 
-        <div v-for="sub in g.subs" :key="sub.sub_category" class="sub-group">
-          <div class="sub-header">
-            <span class="sub-name">{{ sub.sub_category }}</span>
-            <el-tag size="small" type="warning" round>{{ sub.list.length }}</el-tag>
-          </div>
-          <el-table :data="sub.list" stripe size="small">
-            <el-table-column prop="question" label="題目" show-overflow-tooltip />
-            <el-table-column label="正解" width="220">
-              <template #default="{ row }">{{ correctText(row) }}</template>
-            </el-table-column>
-            <el-table-column prop="error_count" label="間違い" width="90" sortable />
-            <el-table-column label="操作" width="90">
-              <template #default="{ row }">
-                <el-button size="small" type="danger" @click="remove(row)">削除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
+        <el-collapse v-model="expandedSubs" class="sub-collapse">
+          <el-collapse-item
+            v-for="sub in g.subs"
+            :key="sub.sub_category"
+            :name="subKey(g.category, sub.sub_category)"
+          >
+            <template #title>
+              <span class="sub-title">
+                {{ sub.sub_category }}
+                <el-tag size="small" type="warning" round>{{ sub.list.length }}</el-tag>
+              </span>
+            </template>
+            <el-table :data="sub.list" stripe size="small">
+              <el-table-column prop="question" label="題目" show-overflow-tooltip />
+              <el-table-column label="正解" width="200">
+                <template #default="{ row }">{{ correctText(row) }}</template>
+              </el-table-column>
+              <el-table-column prop="source_book" label="教材" width="180" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.source_book || '-' }}</template>
+              </el-table-column>
+              <el-table-column prop="source_page" label="ページ" width="80" sortable :sort-method="sortByPage">
+                <template #default="{ row }">{{ row.source_page ? `p.${row.source_page}` : '-' }}</template>
+              </el-table-column>
+              <el-table-column prop="error_count" label="間違い" width="90" sortable />
+              <el-table-column label="操作" width="90">
+                <template #default="{ row }">
+                  <el-button size="small" type="danger" @click="remove(row)">削除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-collapse-item>
+        </el-collapse>
       </el-collapse-item>
     </el-collapse>
   </el-card>
@@ -146,16 +172,16 @@ onMounted(load)
   font-weight: 600;
   font-size: 15px;
 }
-.sub-group { margin-bottom: 16px; }
-.sub-group:last-child { margin-bottom: 0; }
-.sub-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0;
-  padding-left: 4px;
+.sub-collapse { border-top: none; }
+.sub-collapse :deep(.el-collapse-item__header) {
   font-size: 14px;
   color: #606266;
+  padding-left: 4px;
 }
-.sub-name { font-weight: 500; }
+.sub-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
 </style>

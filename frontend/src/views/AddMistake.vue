@@ -14,7 +14,9 @@ const form = reactive({
   option4: '',
   correct_option: 1,
   underline_text: '',
-  explanation: ''
+  explanation: '',
+  source_book: 'JLPT N1 この一冊で合格',
+  source_page: ''
 })
 
 const subOptions = computed(() => SUB_CATEGORIES[form.category] || [])
@@ -51,7 +53,9 @@ const submit = async () => {
     option4: '',
     correct_option: 1,
     underline_text: '',
-    explanation: ''
+    explanation: '',
+    source_book: form.source_book,
+    source_page: ''
   })
   formRef.value.clearValidate()
 }
@@ -102,6 +106,19 @@ const submit = async () => {
       </el-form-item>
       <el-form-item label="解説/メモ">
         <el-input v-model="form.explanation" type="textarea" :rows="3" />
+      </el-form-item>
+      <el-form-item label="教材">
+        <el-input
+          v-model="form.source_book"
+          placeholder="例: JLPT N1 この一冊で合格"
+        />
+      </el-form-item>
+      <el-form-item label="ページ">
+        <el-input
+          v-model="form.source_page"
+          placeholder="例: 78"
+          style="width: 160px"
+        />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="submit">保存</el-button>
