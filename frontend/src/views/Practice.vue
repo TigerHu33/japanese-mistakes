@@ -37,7 +37,25 @@ const selected = ref(null)
 const submitted = ref(false)
 const isCorrect = ref(false)
 
+// クローズ題（複数空欄）用ステート
+const clozeAnswers = ref({})       // {41: 3, 42: 4, ...}
+const isCloze = computed(() => Array.isArray(current.value?.blanks) && current.value.blanks.length > 0)
+const clozeAllAnswered = computed(() =>
+  isCloze.value && current.value.blanks.every((b) => clozeAnswers.value[b.n] != null)
+)
+const clozeResults = computed(() => {
+  if (!isCloze.value || !submitted.value) return []
+  return current.value.blanks.map((b) => ({
+    ...b,
+    selected: clozeAnswers.value[b.n],
+    isCorrect: clozeAnswers.value[b.n] === b.correct
+  }))
+})
+
 const reviewMode = ref(false)      // 「間違いを見直す」中
+
+// 過去回答した問題のスナップショット（前の問題ボタン用）
+const history = ref([])            // [{question, submitted, selected, isCorrect, clozeAnswers}, ...]
 
 const shuffle = (arr) => {
   const a = [...arr]
@@ -64,6 +82,7 @@ const startSession = async () => {
     totalAsked.value = queue.value.length
     wrongList.value = []
     correctList.value = []
+    history.value = []
     reviewMode.value = false
     stage.value = 'practicing'
     nextQuestion()
@@ -78,15 +97,29 @@ const startReviewWrong = () => {
   totalAsked.value = queue.value.length
   wrongList.value = []
   correctList.value = []
+  history.value = []
   reviewMode.value = true
   stage.value = 'practicing'
   nextQuestion()
 }
 
+const snapshotCurrent = () => ({
+  question: current.value,
+  submitted: submitted.value,
+  isCorrect: isCorrect.value,
+  selected: selected.value,
+  clozeAnswers: { ...clozeAnswers.value }
+})
+
 const nextQuestion = () => {
+  // 解答済みの現在問題は履歴に積む
+  if (current.value && submitted.value) {
+    history.value.push(snapshotCurrent())
+  }
   selected.value = null
   submitted.value = false
   isCorrect.value = false
+  clozeAnswers.value = {}
   if (queue.value.length === 0) {
     stage.value = 'finished'
     current.value = null
@@ -95,13 +128,37 @@ const nextQuestion = () => {
   current.value = queue.value.shift()
 }
 
-const submit = async () => {
-  if (selected.value == null) {
-    ElMessage.warning('選択肢を選んでください')
-    return
+const prevQuestion = () => {
+  if (history.value.length === 0) return
+  // 現在問題を queue の先頭に戻す（未解答状態は破棄される）
+  if (current.value) {
+    queue.value.unshift(current.value)
   }
-  submitted.value = true
-  isCorrect.value = selected.value === current.value.correct_option
+  const prev = history.value.pop()
+  current.value = prev.question
+  submitted.value = prev.submitted
+  isCorrect.value = prev.isCorrect
+  selected.value = prev.selected
+  clozeAnswers.value = prev.clozeAnswers || {}
+}
+
+const submit = async () => {
+  if (isCloze.value) {
+    if (!clozeAllAnswered.value) {
+      ElMessage.warning('すべての空欄に回答してください')
+      return
+    }
+    submitted.value = true
+    const allCorrect = current.value.blanks.every((b) => clozeAnswers.value[b.n] === b.correct)
+    isCorrect.value = allCorrect
+  } else {
+    if (selected.value == null) {
+      ElMessage.warning('選択肢を選んでください')
+      return
+    }
+    submitted.value = true
+    isCorrect.value = selected.value === current.value.correct_option
+  }
   if (isCorrect.value) {
     correctList.value.push(current.value)
   } else {
@@ -123,15 +180,26 @@ const options = computed(() => {
 })
 
 const renderQuestion = (m) => {
-  if (!m.underline_text) return escapeHtml(m.question)
   const safeQ = escapeHtml(m.question)
+  if (Array.isArray(m.blanks) && m.blanks.length > 0) {
+    return safeQ.replace(/[（(](\d+)[）)]/g, '<span class="blank-marker">($1)</span>')
+  }
+  if (!m.underline_text) return safeQ
   const safeWord = escapeHtml(m.underline_text)
   const escaped = safeWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return safeQ.replace(new RegExp(escaped), `<u class="underline-word">${safeWord}</u>`)
 }
 
-const renderOption = (text, m) => {
+const renderOption = (text, m, idx) => {
   const safe = escapeHtml(text)
+  // option_underlines が指定されていればそれを使う（用法に限らず汎用）
+  const ul = Array.isArray(m.option_underlines) ? m.option_underlines[idx] : null
+  if (ul) {
+    const safeWord = escapeHtml(ul)
+    const escaped = safeWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return safe.replace(new RegExp(escaped, 'g'), `<u class="underline-word">${safeWord}</u>`)
+  }
+  // フォールバック: 用法のときは question を完全一致で下線（旧データ向け）
   if (m.sub_category === '用法' && m.question) {
     const safeWord = escapeHtml(m.question)
     const escaped = safeWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -188,8 +256,15 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
         ・正解 {{ correctList.length }}
         ・不正解 {{ wrongList.length }}
       </div>
-      <h3 class="question" v-html="renderQuestion(current)"></h3>
-      <el-radio-group v-model="selected" :disabled="submitted" class="options">
+      <div class="question" v-html="renderQuestion(current)"></div>
+
+      <!-- 単問 -->
+      <el-radio-group
+        v-if="!isCloze"
+        v-model="selected"
+        :disabled="submitted"
+        class="options"
+      >
         <el-radio
           v-for="opt in options"
           :key="opt.n"
@@ -199,9 +274,31 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
             'wrong': submitted && opt.n === selected && selected !== current.correct_option
           }"
         >
-          <span v-html="`${opt.n}. ` + renderOption(opt.text, current)"></span>
+          <span v-html="`${opt.n}. ` + renderOption(opt.text, current, opt.n - 1)"></span>
         </el-radio>
       </el-radio-group>
+
+      <!-- クローズ（複数空欄） -->
+      <div v-else class="cloze-blanks">
+        <div v-for="b in current.blanks" :key="b.n" class="cloze-blank">
+          <div class="blank-num">({{ b.n }})</div>
+          <el-radio-group
+            v-model="clozeAnswers[b.n]"
+            :disabled="submitted"
+            class="options"
+          >
+            <el-radio
+              v-for="(text, idx) in b.options"
+              :key="idx"
+              :value="idx + 1"
+              :class="{
+                'correct': submitted && (idx + 1) === b.correct,
+                'wrong': submitted && (idx + 1) === clozeAnswers[b.n] && clozeAnswers[b.n] !== b.correct
+              }"
+            >{{ idx + 1 }}. {{ text }}</el-radio>
+          </el-radio-group>
+        </div>
+      </div>
 
       <div v-if="submitted" class="feedback">
         <el-alert
@@ -209,12 +306,30 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
           :title="isCorrect ? '正解' : '不正解（間違い回数 +1）'"
           :closable="false"
         />
-        <div v-if="current.explanation" class="explanation">
+        <!-- クローズ：空欄ごとの解説 -->
+        <div v-if="isCloze" class="cloze-explanations">
+          <div v-for="r in clozeResults" :key="r.n" class="cloze-exp">
+            <div class="cloze-exp-head">
+              <span class="blank-num">({{ r.n }})</span>
+              <span :class="r.isCorrect ? 'res-ok' : 'res-ng'">
+                {{ r.isCorrect ? '○' : '×' }}
+                正解 {{ r.correct }}. {{ r.options[r.correct - 1] }}
+              </span>
+            </div>
+            <div v-if="r.explanation" class="explanation">{{ r.explanation }}</div>
+          </div>
+        </div>
+        <div v-else-if="current.explanation" class="explanation">
           <strong>解説：</strong>{{ current.explanation }}
         </div>
       </div>
 
       <div class="actions">
+        <el-button
+          v-if="history.length > 0"
+          plain
+          @click="prevQuestion"
+        >← 前の問題</el-button>
         <el-button v-if="!submitted" type="primary" @click="submit">回答する</el-button>
         <el-button v-else type="primary" @click="nextQuestion">次の問題</el-button>
       </div>
@@ -233,8 +348,14 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
         <h4>間違えた問題（{{ wrongList.length }}件）</h4>
         <ul>
           <li v-for="m in wrongList" :key="m.id">
-            <span v-html="renderQuestion(m)"></span>
-            <span class="ans">→ {{ m.correct_option }}. {{ m[`option${m.correct_option}`] }}</span>
+            <template v-if="Array.isArray(m.blanks) && m.blanks.length > 0">
+              <span>クローズ {{ m.source_page }}</span>
+              <span class="ans">→ {{ m.blanks.map(b => `(${b.n})${b.correct}`).join(' ') }}</span>
+            </template>
+            <template v-else>
+              <span v-html="renderQuestion(m)"></span>
+              <span class="ans">→ {{ m.correct_option }}. {{ m[`option${m.correct_option}`] }}</span>
+            </template>
           </li>
         </ul>
       </div>
@@ -282,6 +403,38 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
 }
 .options :deep(.el-radio.correct) { background: #f0f9eb; }
 .options :deep(.el-radio.wrong) { background: #fef0f0; }
+.cloze-blanks { margin: 16px 0; display: flex; flex-direction: column; gap: 16px; }
+.cloze-blank {
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  padding: 12px;
+  background: #fafbfc;
+}
+.blank-num {
+  display: inline-block;
+  font-weight: 600;
+  color: #409eff;
+  margin-bottom: 6px;
+}
+.question :deep(.blank-marker) {
+  display: inline-block;
+  padding: 0 4px;
+  background: #ecf5ff;
+  color: #409eff;
+  border-radius: 3px;
+  font-weight: 600;
+  margin: 0 2px;
+}
+.cloze-explanations { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+.cloze-exp {
+  padding: 10px 12px;
+  background: #f5f7fa;
+  border-radius: 4px;
+}
+.cloze-exp-head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.cloze-exp-head .res-ok { color: #67c23a; font-weight: 500; }
+.cloze-exp-head .res-ng { color: #f56c6c; font-weight: 500; }
+.cloze-exp .explanation { white-space: pre-wrap; line-height: 1.6; padding: 0; background: transparent; }
 .feedback { margin: 16px 0; }
 .explanation { margin-top: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px; white-space: pre-wrap; line-height: 1.6; }
 .actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }

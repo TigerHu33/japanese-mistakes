@@ -1,24 +1,35 @@
 -- N1 错题记录数据库初始化脚本
 -- PostgREST 通过 app 角色访问，因此需要将该角色的权限授予表
 
+-- 1 題 = 4 択 1 答（option1-4 + correct_option）が基本形。
+-- 文章の文法など 1 篇文章に複数空欄があるクローズ題は blanks JSONB で表現する。
+-- blanks が NOT NULL のときは option1-4 / correct_option を NULL にできる。
 CREATE TABLE IF NOT EXISTS mistakes (
   id              SERIAL PRIMARY KEY,
   category        TEXT NOT NULL CHECK (category IN ('文字・語彙', '文法', '読解')),
   sub_category    TEXT,
   question        TEXT NOT NULL,
-  option1         TEXT NOT NULL,
-  option2         TEXT NOT NULL,
-  option3         TEXT NOT NULL,
-  option4         TEXT NOT NULL,
-  correct_option  SMALLINT NOT NULL CHECK (correct_option BETWEEN 1 AND 4),
+  option1         TEXT,
+  option2         TEXT,
+  option3         TEXT,
+  option4         TEXT,
+  correct_option  SMALLINT CHECK (correct_option IS NULL OR correct_option BETWEEN 1 AND 4),
+  blanks          JSONB,                 -- クローズ題用：[{n, options[4], correct, explanation?}, ...]
+  option_underlines JSONB,                -- 用法など、各選択肢で下線を引く語の配列：[ul1, ul2, ul3, ul4]
   underline_text  TEXT,
   explanation     TEXT,
   source_book     TEXT,                  -- 教材名（例: "JLPT N1 この一冊で合格"）
-  source_page     TEXT,                  -- ページ（例: "78"）
+  source_page     TEXT,                  -- ページ・問題番号（例: "78" / "問題7-41〜45"）
   error_count     INTEGER NOT NULL DEFAULT 1,
   last_wrong_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_practiced_at TIMESTAMPTZ,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT mistakes_format_check CHECK (
+    blanks IS NOT NULL
+    OR (option1 IS NOT NULL AND option2 IS NOT NULL
+        AND option3 IS NOT NULL AND option4 IS NOT NULL
+        AND correct_option IS NOT NULL)
+  )
 );
 
 CREATE INDEX IF NOT EXISTS idx_mistakes_category ON mistakes(category);

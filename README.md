@@ -206,13 +206,14 @@ japanese-mistakes/
 
 ### 用法
 
-- `question`: 出題対象の単語そのもの（例: `由来`）
+- `question`: 出題対象の単語の辞書形（例: `持ち越す`）
 - `underline_text`: **空（null）**
 - `option1-4`: それぞれが完整な例文（その単語を含む）
 - `correct_option`: 1〜4
-- フロントの `Practice.vue` は `sub_category === '用法'` のとき、選択肢中の `question` 文字列を自動的に下線表示する
+- `option_underlines`: **必須**。各選択肢で下線を引く語の配列 `[ul1, ul2, ul3, ul4]`。動詞・い形容詞は活用形で書く（例: `持ち越した`/`持ち越し`/`持ち越される`/`持ち越す`）
+- 旧データで `option_underlines=null` の場合は `question` 完全一致でフォールバック下線（活用形は引かれない）
 
-例:
+例 1（名詞・サ変動詞）:
 ```json
 {
   "category": "文字・語彙", "sub_category": "用法",
@@ -221,7 +222,22 @@ japanese-mistakes/
   "option2": "人類の由来は、三十万年前にまでさかのぼる。",
   "option3": "日本では、年の初めに見る夢に富士山が出てくると由来が良いとされている。",
   "option4": "この人物が今回の事件に由来している可能性は低そうだ。",
-  "correct_option": 1
+  "correct_option": 1,
+  "option_underlines": ["由来", "由来", "由来", "由来"]
+}
+```
+
+例 2（動詞 = 活用形が混在）:
+```json
+{
+  "category": "文字・語彙", "sub_category": "用法",
+  "question": "持ち越す",
+  "option1": "先週、新しい家に持ち越した。",
+  "option2": "弟の身長は、もう少しで兄の身長を持ち越しそうだ。",
+  "option3": "東京オリンピックは来年に持ち越されることとなった。",
+  "option4": "100万人を持ち越す人たちがキャンペーンに応募した。",
+  "correct_option": 3,
+  "option_underlines": ["持ち越した", "持ち越し", "持ち越される", "持ち越す"]
 }
 ```
 
@@ -263,6 +279,35 @@ japanese-mistakes/
   "explanation": "正しい並び: 1→4→3→2（とはいえ→今の私達なら→勝てない相手→ではない）\n完成文: 相手は負けを知らない強豪チームとはいえ、今の私達なら勝てない相手ではないだろう。\n【ポイント】..."
 }
 ```
+
+### 文章の文法（クローズ／1 文 5 空）
+
+1 篇の文章に複数空欄（典型は 5 空）が連続するタイプ。**1 題 = 1 文章** で `blanks` JSONB に空欄ごとの選択肢と正答を入れる。`option1-4` / `correct_option` は **null**。
+
+- `question`: 文章全体。各空欄は `(41)` `(42)` … と全角／半角括弧 + 番号で表記（前端は自動で青色マーカーに装飾）
+- `blanks`: `[{n, options:[4要素], correct:1〜4, explanation?}]`
+- `correct_option` / `option1-4`: **null**
+- `underline_text`: **null**
+- `source_page`: 範囲表記（例: `問題7-41〜45`）
+
+例:
+```json
+{
+  "category": "文法", "sub_category": "文章の文法",
+  "question": "父が父でなくなっている。…(41)、家族はバラバラに…父親のほうが(42)。…しかし(43)は…はじつは(44)。…しかし(45)の関係では…",
+  "option1": null, "option2": null, "option3": null, "option4": null,
+  "correct_option": null,
+  "blanks": [
+    {"n": 41, "options": ["ところで","とはいえ","その結果","それでも"], "correct": 3, "explanation": "因果関係。…"},
+    {"n": 42, "options": ["…","…","…","…"], "correct": 4, "explanation": "…"}
+  ],
+  "explanation": "文章全体のテーマ要約（任意）",
+  "source_book": "JLPT N1 2010年7月 真題",
+  "source_page": "問題7-41〜45"
+}
+```
+
+採点: 全空正解で「正解」、1 つでも誤りなら「不正解」（`error_count` +1）。空欄ごとの正誤と解説は提出後に表示される。
 
 ### `explanation`（任意・全題型共通）
 

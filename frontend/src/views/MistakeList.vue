@@ -60,8 +60,12 @@ const remove = async (row) => {
   await load()
 }
 
-const correctText = (row) =>
-  `${row.correct_option}. ${row[`option${row.correct_option}`]}`
+const correctText = (row) => {
+  if (Array.isArray(row.blanks) && row.blanks.length > 0) {
+    return row.blanks.map((b) => `(${b.n})${b.correct}`).join(' ')
+  }
+  return `${row.correct_option}. ${row[`option${row.correct_option}`]}`
+}
 
 const sortByPage = (a, b) => {
   const toNum = (v) => {
