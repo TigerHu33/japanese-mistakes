@@ -42,6 +42,24 @@ export const DEFAULT_COUNTS = {
 }
 export const DEFAULT_COUNT_FALLBACK = 20
 
+// 小分類ごとの 1 問あたり目安秒数（本番試験の配分に基づく）
+export const SECONDS_PER_QUESTION = {
+  '漢字読み': 20,
+  '文脈規定': 30,
+  '言い換え類義': 25,
+  '用法': 40,
+  '文の文法1（文法形式の判断）': 45,
+  '文の文法2（文の組み立て）': 60,
+  '文章の文法': 60,
+  '内容理解（短文）': 180,
+  '内容理解（中文）': 240,
+  '内容理解（長文）': 480,
+  '統合理解': 300,
+  '主張理解（長文）': 480,
+  '情報検索': 180
+}
+export const SECONDS_PER_QUESTION_FALLBACK = 30
+
 export async function listMistakes({ category, sub_category } = {}) {
   const params = { order: 'error_count.desc,last_wrong_at.desc' }
   if (category) params.category = `eq.${category}`

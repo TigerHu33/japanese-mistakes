@@ -1,11 +1,13 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   CATEGORIES,
   SUB_CATEGORIES,
   DEFAULT_COUNTS,
   DEFAULT_COUNT_FALLBACK,
+  SECONDS_PER_QUESTION,
+  SECONDS_PER_QUESTION_FALLBACK,
   getPracticePool,
   incrementError,
   markPracticed
@@ -25,6 +27,44 @@ const plannedCount = computed(() =>
     ? DEFAULT_COUNTS[subCategory.value] || DEFAULT_COUNT_FALLBACK
     : DEFAULT_COUNT_FALLBACK
 )
+
+const secondsPerQuestion = computed(() =>
+  subCategory.value
+    ? SECONDS_PER_QUESTION[subCategory.value] || SECONDS_PER_QUESTION_FALLBACK
+    : SECONDS_PER_QUESTION_FALLBACK
+)
+const plannedSeconds = computed(() => secondsPerQuestion.value * plannedCount.value)
+
+const formatDuration = (sec) => {
+  const sign = sec < 0 ? '-' : ''
+  const abs = Math.abs(sec)
+  const m = Math.floor(abs / 60)
+  const s = abs % 60
+  return `${sign}${m}:${String(s).padStart(2, '0')}`
+}
+
+// セッションタイマー（B 方式：セット全体で 1 つ。残り時間が負になっても続行）
+const remainingSeconds = ref(0)
+const totalSeconds = ref(0)
+let timerId = null
+const timerExpired = computed(() => remainingSeconds.value <= 0 && totalSeconds.value > 0)
+const remainingLabel = computed(() => formatDuration(remainingSeconds.value))
+
+const stopTimer = () => {
+  if (timerId != null) {
+    clearInterval(timerId)
+    timerId = null
+  }
+}
+const startTimer = (sec) => {
+  stopTimer()
+  totalSeconds.value = sec
+  remainingSeconds.value = sec
+  timerId = setInterval(() => {
+    remainingSeconds.value -= 1
+  }, 1000)
+}
+onBeforeUnmount(stopTimer)
 
 // セッション内ステート
 const queue = ref([])              // これから解く問題
@@ -85,6 +125,7 @@ const startSession = async () => {
     history.value = []
     reviewMode.value = false
     stage.value = 'practicing'
+    startTimer(secondsPerQuestion.value * queue.value.length)
     nextQuestion()
   } finally {
     loading.value = false
@@ -100,6 +141,7 @@ const startReviewWrong = () => {
   history.value = []
   reviewMode.value = true
   stage.value = 'practicing'
+  startTimer(secondsPerQuestion.value * queue.value.length)
   nextQuestion()
 }
 
@@ -123,6 +165,7 @@ const nextQuestion = () => {
   if (queue.value.length === 0) {
     stage.value = 'finished'
     current.value = null
+    stopTimer()
     return
   }
   current.value = queue.value.shift()
@@ -172,6 +215,7 @@ const finishSession = () => {
   stage.value = 'setup'
   current.value = null
   queue.value = []
+  stopTimer()
 }
 
 const options = computed(() => {
@@ -243,7 +287,11 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
           </el-select>
         </el-form-item>
       </el-form>
-      <div class="plan">出題予定: <strong>{{ plannedCount }}</strong> 問（未演習・古い順を優先）</div>
+      <div class="plan">
+        出題予定: <strong>{{ plannedCount }}</strong> 問（未演習・古い順を優先）<br />
+        制限時間: <strong>{{ formatDuration(plannedSeconds) }}</strong>
+        <span class="plan-sub">（{{ secondsPerQuestion }} 秒 / 問）</span>
+      </div>
       <el-button type="primary" @click="startSession">開始</el-button>
     </div>
 
@@ -255,6 +303,10 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
         進捗 {{ progressDone + 1 }} / {{ totalAsked }}
         ・正解 {{ correctList.length }}
         ・不正解 {{ wrongList.length }}
+        <span class="timer" :class="{ 'timer-expired': timerExpired }">
+          残 {{ remainingLabel }}
+          <span v-if="timerExpired" class="timer-warn">時間超過</span>
+        </span>
       </div>
       <div class="question" v-html="renderQuestion(current)"></div>
 
@@ -375,7 +427,27 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
 
 <style scoped>
 .setup, .quiz, .result { padding: 8px 0; }
-.plan { margin: 12px 0; color: #606266; }
+.plan { margin: 12px 0; color: #606266; line-height: 1.8; }
+.plan-sub { color: #909399; font-size: 13px; margin-left: 4px; }
+.timer {
+  margin-left: auto;
+  padding: 2px 10px;
+  border-radius: 3px;
+  background: #f0f9eb;
+  color: #67c23a;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.timer-expired {
+  background: #fef0f0;
+  color: #f56c6c;
+  animation: timer-pulse 1.2s ease-in-out infinite;
+}
+.timer-warn { margin-left: 6px; font-size: 12px; }
+@keyframes timer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
 .meta { color: #909399; margin-bottom: 12px; display: flex; gap: 12px; align-items: center; }
 .review-badge {
   background: #faecd8;
