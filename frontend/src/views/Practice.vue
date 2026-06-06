@@ -526,4 +526,14 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
 .wrong-list h4 { color: #f56c6c; }
 .wrong-list ul { padding-left: 20px; line-height: 1.8; }
 .wrong-list .ans { color: #67c23a; margin-left: 8px; }
+
+@media (max-width: 600px) {
+  /* 進捗・タイマー行は折り返し可に */
+  .meta { flex-wrap: wrap; gap: 8px; }
+  .timer { margin-left: 0; }
+  /* ボタンを押しやすく等分 */
+  .actions { gap: 8px; }
+  .actions .el-button { flex: 1; margin-left: 0; }
+  .options :deep(.el-radio__label) { font-size: 14px; }
+}
 </style>

@@ -188,4 +188,12 @@ onMounted(load)
   gap: 8px;
   font-weight: 500;
 }
+
+@media (max-width: 600px) {
+  /* タイトルとフィルタを縦積み・全幅に */
+  .header-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .filters { flex-direction: column; gap: 8px; }
+  /* 表は横スクロールで全列を維持 */
+  :deep(.el-table) { font-size: 13px; }
+}
 </style>

@@ -126,3 +126,20 @@ const submit = async () => {
     </el-form>
   </el-card>
 </template>
+
+<style scoped>
+@media (max-width: 600px) {
+  /* ラベルを上に・入力欄を全幅に（label-width 100px だと窮屈なため） */
+  :deep(.el-form-item) {
+    display: block;
+    margin-bottom: 16px;
+  }
+  :deep(.el-form-item__label) {
+    justify-content: flex-start;
+    width: auto !important;
+    padding: 0 0 4px;
+    line-height: 1.4;
+  }
+  :deep(.el-form-item__content) { margin-left: 0 !important; }
+}
+</style>
