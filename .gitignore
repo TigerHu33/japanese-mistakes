@@ -5,3 +5,8 @@ dist/
 .vite/
 .env
 .env.local
+
+# Supabase 密钥(含 service_role / 数据库密码 —— 仓库为 public,严禁提交)
+supabase/config
+supabase/.env
+supabase/.env.local
