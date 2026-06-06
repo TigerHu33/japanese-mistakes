@@ -1,10 +1,15 @@
 import axios from 'axios'
 
+// 有 Supabase 环境变量则走云端 REST;否则回退本地 docker 的 /api(vite proxy)——一套代码两用
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+
 const http = axios.create({
-  baseURL: '/api',
+  baseURL: SUPABASE_URL ? `${SUPABASE_URL}/rest/v1` : '/api',
   headers: {
     'Content-Type': 'application/json',
-    Accept: 'application/json'
+    Accept: 'application/json',
+    ...(SUPABASE_KEY ? { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } : {})
   }
 })
 
