@@ -74,5 +74,12 @@ html, body, #app { height: 100%; margin: 0; }
     width: 100%;
   }
   .el-form--inline .el-form-item__content { display: block; }
+  /* iOS Safari: フォーカス時の自動ズーム(font-size<16px が原因)を防ぐ */
+  .el-select__wrapper,
+  .el-select__input,
+  .el-input__inner,
+  .el-textarea__inner {
+    font-size: 16px !important;
+  }
 }
 </style>

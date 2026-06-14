@@ -97,16 +97,58 @@ export async function incrementError(id) {
   return data
 }
 
-// 練習プール取得：last_practiced_at が NULL or 古い順を優先
+// 練習プール取得：
+//   「未演習(没做过)」と「間違いが多い(错最多)」を 3:1 の比率で混ぜる。
+//   例) 20 問 → 未演習 15 + 間違い多い 5。
+//   2 つのバケツは last_practiced_at の NULL / NOT NULL で排他なので重複しない。
+//   片方が不足した場合はもう片方で補充し、必ず total 件に揃える。
 export async function getPracticePool({ category, sub_category, limit }) {
-  const params = {
-    category: `eq.${category}`,
-    order: 'last_practiced_at.asc.nullsfirst,error_count.desc'
+  const total = limit || DEFAULT_COUNT_FALLBACK
+  const errorTarget = Math.round(total / 4) // 1/4 = 错最多
+  const neverTarget = total - errorTarget   // 3/4 = 没做过
+
+  const base = { category: `eq.${category}` }
+  if (sub_category) base.sub_category = `eq.${sub_category}`
+
+  // ① 没做过：last_practiced_at IS NULL（不足時の補充用に total 件まで多めに取得）
+  const neverParams = {
+    ...base,
+    last_practiced_at: 'is.null',
+    order: 'error_count.desc,id.asc',
+    limit: total
   }
-  if (sub_category) params.sub_category = `eq.${sub_category}`
-  if (limit) params.limit = limit
-  const { data } = await http.get('/mistakes', { params })
-  return data
+  // ② 错最多：演習済み(IS NOT NULL)を error_count 降順
+  const errorParams = {
+    ...base,
+    last_practiced_at: 'not.is.null',
+    order: 'error_count.desc,last_practiced_at.asc',
+    limit: total
+  }
+
+  const [neverRes, errorRes] = await Promise.all([
+    http.get('/mistakes', { params: neverParams }),
+    http.get('/mistakes', { params: errorParams })
+  ])
+  const never = neverRes.data
+  const errs = errorRes.data
+
+  const seen = new Set()
+  const result = []
+  const pushUpTo = (arr, n) => {
+    for (const m of arr) {
+      if (n <= 0) break
+      if (seen.has(m.id)) continue
+      seen.add(m.id)
+      result.push(m)
+      n--
+    }
+  }
+  // 目標比率で各バケツから取得 → 不足分は相互に補充
+  pushUpTo(errs, errorTarget)
+  pushUpTo(never, neverTarget)
+  if (result.length < total) pushUpTo(never, total - result.length)
+  if (result.length < total) pushUpTo(errs, total - result.length)
+  return result
 }
 
 // 解答済み（正解／不正解問わず）として last_practiced_at を更新
