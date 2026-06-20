@@ -10,3 +10,7 @@ dist/
 supabase/config
 supabase/.env
 supabase/.env.local
+
+# 错题导入工作目录(数据真源在 Supabase,无需提交)
+db/imports/inbox/
+db/imports/done/
