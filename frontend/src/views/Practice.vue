@@ -106,6 +106,14 @@ const shuffle = (arr) => {
   return a
 }
 
+// 単問の選択肢をシャッフルした表示順を生成（問題に入るたび 1 回だけ）。
+// n = 元の番号(1〜4, 採点・下線はこれを使う), disp = 表示番号(並べ替え後 1〜4)
+const buildOptions = (m) => {
+  if (!m) return []
+  const base = [1, 2, 3, 4].map((n) => ({ n, text: m[`option${n}`] }))
+  return shuffle(base).map((o, i) => ({ ...o, disp: i + 1 }))
+}
+
 const startSession = async () => {
   loading.value = true
   try {
@@ -150,7 +158,8 @@ const snapshotCurrent = () => ({
   submitted: submitted.value,
   isCorrect: isCorrect.value,
   selected: selected.value,
-  clozeAnswers: { ...clozeAnswers.value }
+  clozeAnswers: { ...clozeAnswers.value },
+  optionOrder: optionOrder.value
 })
 
 const nextQuestion = () => {
@@ -165,10 +174,12 @@ const nextQuestion = () => {
   if (queue.value.length === 0) {
     stage.value = 'finished'
     current.value = null
+    optionOrder.value = []
     stopTimer()
     return
   }
   current.value = queue.value.shift()
+  optionOrder.value = buildOptions(current.value)  // 問題ごとに選択肢を1回シャッフル
 }
 
 const prevQuestion = () => {
@@ -183,6 +194,7 @@ const prevQuestion = () => {
   isCorrect.value = prev.isCorrect
   selected.value = prev.selected
   clozeAnswers.value = prev.clozeAnswers || {}
+  optionOrder.value = prev.optionOrder || buildOptions(prev.question)  // 当時の並びを復元
 }
 
 const submit = async () => {
@@ -218,10 +230,9 @@ const finishSession = () => {
   stopTimer()
 }
 
-const options = computed(() => {
-  if (!current.value) return []
-  return [1, 2, 3, 4].map((n) => ({ n, text: current.value[`option${n}`] }))
-})
+// 現在問題の選択肢表示順（computed だと再計算のたびに再シャッフルされ
+// クリック時に並びが飛ぶため、問題切替時に 1 回だけ生成して保持する）
+const optionOrder = ref([])
 
 const renderQuestion = (m) => {
   const safeQ = escapeHtml(m.question)
@@ -318,7 +329,7 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
         class="options"
       >
         <el-radio
-          v-for="opt in options"
+          v-for="opt in optionOrder"
           :key="opt.n"
           :value="opt.n"
           :class="{
@@ -326,7 +337,7 @@ const progressDone = computed(() => totalAsked.value - queue.value.length - (cur
             'wrong': submitted && opt.n === selected && selected !== current.correct_option
           }"
         >
-          <span v-html="`${opt.n}. ` + renderOption(opt.text, current, opt.n - 1)"></span>
+          <span v-html="`${opt.disp}. ` + renderOption(opt.text, current, opt.n - 1)"></span>
         </el-radio>
       </el-radio-group>
 
