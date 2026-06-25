@@ -155,3 +155,77 @@ export async function getPracticePool({ category, sub_category, limit }) {
 export async function markPracticed(id) {
   await http.patch(`/mistakes?id=eq.${id}`, { last_practiced_at: new Date().toISOString() })
 }
+
+// ===== 真題模試 =====
+
+// 套題一覧（年度降順）
+export async function listPapers() {
+  const { data } = await http.get('/papers', { params: { order: 'exam_year.desc,id.desc' } })
+  return data
+}
+
+// 一套真題の全題目（所属文章を埋め込み、seq 順）
+export async function getPaperBundle(paperId) {
+  const { data } = await http.get('/paper_questions', {
+    params: {
+      paper_id: `eq.${paperId}`,
+      select: '*,paper_passages(*)',
+      order: 'seq.asc'
+    }
+  })
+  return data
+}
+
+// 交卷後：間違えた問題を mistakes へ投影。
+//   去重は source_book + source_page（＝問題{section}-{seq}、短く一意）で行う。
+//   既存なら increment_error、なければ INSERT。読解は文章を題干に前置して独立成立させる。
+export async function archiveWrongToMistakes(wrongQuestions, paper) {
+  let inserted = 0
+  let incremented = 0
+  for (const q of wrongQuestions) {
+    const sourcePage = `問題${q.section}-${q.seq}`
+    const { data: hit } = await http.get('/mistakes', {
+      params: {
+        source_book: `eq.${paper.source_book}`,
+        source_page: `eq.${sourcePage}`,
+        select: 'id',
+        limit: 1
+      }
+    })
+    if (hit.length) {
+      await http.post('/rpc/increment_error', { mistake_id: hit[0].id })
+      incremented++
+      continue
+    }
+    const passage = q.paper_passages
+    let question = q.question
+    if (passage && passage.body) {
+      const body = passage.body_b
+        ? `${passage.body}\n\n【B】\n${passage.body_b}`
+        : passage.body
+      question = `${body}\n\n【設問】${q.question}`
+    }
+    await http.post(
+      '/mistakes',
+      [{
+        category: q.category,
+        sub_category: q.sub_category,
+        question,
+        option1: q.option1,
+        option2: q.option2,
+        option3: q.option3,
+        option4: q.option4,
+        correct_option: q.correct_option,
+        blanks: q.blanks ?? null,
+        option_underlines: q.option_underlines ?? null,
+        underline_text: q.underline_text ?? null,
+        explanation: q.explanation ?? null,
+        source_book: paper.source_book,
+        source_page: sourcePage
+      }],
+      { headers: { Prefer: 'return=representation' } }
+    )
+    inserted++
+  }
+  return { inserted, incremented }
+}

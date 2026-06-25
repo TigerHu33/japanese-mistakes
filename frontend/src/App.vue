@@ -11,6 +11,7 @@
         <el-menu-item index="list">錯題一覧</el-menu-item>
         <el-menu-item index="add">錯題録入</el-menu-item>
         <el-menu-item index="practice">練習モード</el-menu-item>
+        <el-menu-item index="mock">真題模試</el-menu-item>
       </el-menu>
     </el-header>
     <el-main>

@@ -6,6 +6,7 @@ import App from './App.vue'
 import AddMistake from './views/AddMistake.vue'
 import MistakeList from './views/MistakeList.vue'
 import Practice from './views/Practice.vue'
+import MockExam from './views/MockExam.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -13,7 +14,8 @@ const router = createRouter({
     { path: '/', redirect: '/list' },
     { path: '/list', component: MistakeList, name: 'list', meta: { title: '錯題一覧' } },
     { path: '/add', component: AddMistake, name: 'add', meta: { title: '錯題録入' } },
-    { path: '/practice', component: Practice, name: 'practice', meta: { title: '練習モード' } }
+    { path: '/practice', component: Practice, name: 'practice', meta: { title: '練習モード' } },
+    { path: '/mock', component: MockExam, name: 'mock', meta: { title: '真題模試' } }
   ]
 })
 

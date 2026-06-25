@@ -19,6 +19,14 @@
 | source_book / source_page | 可选 | 来源；缺口统计用 |
 | blanks | 仅多空格 cloze 题 | `[{n, options:[...], correct, explanation}]` |
 
+## cloze 题（blanks）题干标记规则（易漏，必须遵守）
+前端 `Practice.vue renderQuestion()` 用正则 `/[（(](\d+)[）)]/g` 把题干里的空格标记替换成可点击的高亮 `blank-marker`。
+
+- 每个空在 `question` 里必须写成 **`(16)`**（括号紧贴数字，**括号与数字之间不能有空格**）；半角 `()` 或全角 `（）` 均可，但**不要加空格**，否则正则不匹配 → 退化成普通文字，不高亮、不可点。
+- ✗ 反例：`（　16　）`（全角空格）、`( 16 )`（半角空格）都无效。
+- 标记里的数字必须与 `blanks[].n` 一一对应。
+- 非数字的括号（如 `（注）`）不受影响，正常保留。
+
 ## underline_text 规则（易漏，必须遵守）
 前端 `Practice.vue renderQuestion()` 靠 `underline_text` 在题干中划线；缺失则不划线，读音/言い換え题会无法成立。
 
