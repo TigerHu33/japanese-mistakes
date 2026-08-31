@@ -173,6 +173,27 @@ VITE_SUPABASE_ANON_KEY  = <anon public 值>
 
 ---
 
+## 3.6 多用户登录(Supabase Auth)部署步骤
+
+`0004_auth.sql` 给 `mistakes` 加 `user_id` 并按用户隔离；套题库(`papers`/`paper_passages`/`paper_questions`)保持全体登录用户共享，不隔离。
+
+1. **执行迁移**：SQL Editor 中跑 `supabase/migrations/0004_auth.sql`。跑完后 `user_id` 仍允许为 NULL(兼容存量数据),存量数据这时候还查不出来(RLS 要求 `user_id = auth.uid()`)。
+2. **(可选但推荐)关掉邮箱确认**：Dashboard → Authentication → Providers → Email → 关闭 "Confirm email"。本项目没配自定义 SMTP,Supabase 自带的确认邮件发送额度很低,个人多用户场景建议直接关掉,注册即登录。
+3. **前端部署**：`frontend/package.json` 新增了 `@supabase/supabase-js` 依赖,Cloudflare Pages 会在构建时自动 `npm install`,无需额外配置。
+4. **老用户(user1)注册**：打开部署好的前端 `/#/login`,用"新規登録"标签注册一个账号作为 user1。
+5. **回填存量数据**：SQL Editor 执行:
+   ```sql
+   -- 查 user1 的 uid
+   select id, email from auth.users;
+
+   -- 把注册前就存在的错题全部归到 user1(把 <uid> 换成上一步查到的值)
+   update public.mistakes set user_id = '<uid>' where user_id is null;
+
+   -- 回填完成后收紧约束,防止之后漏传 user_id
+   alter table public.mistakes alter column user_id set not null;
+   ```
+6. **其他用户**：直接在登录页"新規登録"自助注册即可,新账号的 `mistakes` 从空表开始,互不可见。
+
 ## 4. 回滚 / 重置后端
 
 ```sql

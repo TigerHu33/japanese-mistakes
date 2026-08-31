@@ -1,6 +1,6 @@
 <template>
   <el-container class="app">
-    <el-header class="header">
+    <el-header v-if="$route.name !== 'login'" class="header">
       <div class="brand">N1 錯題記録</div>
       <el-menu
         mode="horizontal"
@@ -13,12 +13,25 @@
         <el-menu-item index="practice">練習モード</el-menu-item>
         <el-menu-item index="mock">真題模試</el-menu-item>
       </el-menu>
+      <el-button v-if="supabase" text @click="logout">ログアウト</el-button>
     </el-header>
     <el-main>
       <router-view />
     </el-main>
   </el-container>
 </template>
+
+<script setup>
+import { useRouter } from 'vue-router'
+import { supabase, signOut } from './supabase'
+
+const router = useRouter()
+
+async function logout() {
+  await signOut()
+  router.push({ name: 'login' })
+}
+</script>
 
 <style>
 html, body, #app { height: 100%; margin: 0; }
@@ -32,6 +45,7 @@ html, body, #app { height: 100%; margin: 0; }
   background: #fff;
 }
 .brand { font-weight: 600; font-size: 18px; white-space: nowrap; }
+.header .el-button { margin-left: auto; white-space: nowrap; }
 .el-main { max-width: 960px; margin: 0 auto; width: 100%; }
 
 /* ===== モバイル対応（iPhone など狭い画面）===== */

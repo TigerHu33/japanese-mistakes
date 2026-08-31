@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { supabase, getSession } from './supabase'
 
 // 有 Supabase 环境变量则走云端 REST;否则回退本地 docker 的 /api(vite proxy)——一套代码两用
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -9,9 +10,21 @@ const http = axios.create({
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
-    ...(SUPABASE_KEY ? { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } : {})
+    ...(SUPABASE_KEY ? { apikey: SUPABASE_KEY } : {})
   }
 })
+
+// mistakes は RLS で user_id = auth.uid() に絞られるため、毎リクエスト
+// ログイン中ユーザーの JWT を Authorization に載せる(apikey は常にプロジェクトの anon key)。
+if (supabase) {
+  http.interceptors.request.use(async (config) => {
+    const session = await getSession()
+    if (session) {
+      config.headers.Authorization = `Bearer ${session.access_token}`
+    }
+    return config
+  })
+}
 
 export const CATEGORIES = ['文字・語彙', '文法', '読解']
 
